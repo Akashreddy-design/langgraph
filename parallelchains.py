@@ -1,34 +1,35 @@
+from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
+from typing import TypedDict
 from dotenv import load_dotenv
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser   
-from langchain.output_parsers import PydanticOutputParser
-from langchain.schema.runnable import RunnableParallel,RunnableBranch,RunnableLambda
-from pydantic import BaseModel, Field
 
 load_dotenv()
-model1=ChatOpenAI(temperature=0)
-model2=ChatOpenAI(temperature=0)
 
+# ✅ instantiate the model properly
+model = ChatOpenAI(model="gpt-4o-mini")
 
-template1=PromptTemplate(
-    template="tell me detailed description about {text}",input_variables=["text"]
-)
-template2=PromptTemplate(
-    template="give me question and answer about this text {text}",input_variables=["text"]
-)
-template3=PromptTemplate(
-    template="geneate a combined summary of these two texts {text1} and {text2}",input_variables=["text1","text2"]
-)   
-parser=StrOutputParser()
-parallel_chain=RunnableParallel(
-    {
-        "text1":template1|model1|parser,
-        "text2":template2|model2|parser    
-    }
-)
-last_chain=template3|model1|parser
-final_chain=parallel_chain|last_chain
-result=final_chain.invoke({"text":"blackholes"})
-print(result) 
-final_chain.get_graph().print_ascii()
+# ✅ define the state type
+class LLM_state(TypedDict):
+    question: str
+    answer: str
+
+# ✅ node function
+def llm_qa(state: LLM_state) -> LLM_state:
+    question = state["question"]
+    prompt = f"Answer the following question: {question}"
+    answer = model.invoke(prompt).content
+    state["answer"] = answer
+    return state
+
+# ✅ build the workflow graph
+graph = StateGraph(LLM_state)
+graph.add_node("llm_qa", llm_qa)
+graph.add_edge(START, "llm_qa")
+graph.add_edge("llm_qa", END)
+workflow = graph.compile()
+
+# ✅ invoke
+initial_state = {"question": "What is the distance between Earth and Moon?"}
+final_state = workflow.invoke(initial_state)
+
+print(final_state["answer"])
